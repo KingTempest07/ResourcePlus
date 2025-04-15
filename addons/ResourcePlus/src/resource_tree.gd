@@ -40,3 +40,29 @@ func add_base_resource(resource):
 func _ready():
 	hide_root = true
 	create_item()
+
+
+func _get_drag_data(at_position):
+	var item = get_item_at_position(at_position)
+	if item == null:
+		return null
+	if item.get_metadata(0) == "Folder":
+		return null
+	
+	var resource: Resource = load(item.get_metadata(0))
+
+	var icon: Texture2D
+	var classes:= ProjectSettings.get_global_class_list()
+	for klass: Dictionary in classes:
+		if klass.class == (resource.get_script() as Script).get_global_name():
+			if klass.icon.length() == 0:
+				icon = ResourceDock.get_icon("ResourcePreloader")
+			else:
+				icon = load(klass.icon)
+			break
+	
+	var rect = TextureRect.new()
+	rect.texture = icon
+	set_drag_preview(rect)
+
+	return {"type": "resource", "resource": resource}

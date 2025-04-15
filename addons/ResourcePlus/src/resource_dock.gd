@@ -32,6 +32,10 @@ var editor_file_system: EditorFileSystem
 var dock_file_system: FileSystemDock
 
 
+const SAVE_DATA_LOCATION:= "res://addons/ResourcePlus/src/data.tres"
+var save_data: Resource_Saved_Data
+
+
 #region Resource Tree
 @export 
 var tree: ResourceTree
@@ -270,14 +274,7 @@ func collapse_check():
 #endregion
 
 
-var resource_regex = RegEx.new()
-
-
-const SAVE_DATA_LOCATION:= "res://addons/ResourcePlus/src/data.tres"
-var save_data: Resource_Saved_Data
-
-
-#region Initialization
+#region Initialization/Exit
 func _ready():
 	_connect_signals()
 
@@ -346,13 +343,132 @@ func _set_icons():
 	)
 
 	new_resource_type_button.icon = get_icon("ScriptCreate")
-#endregion
-
+	
 
 func _exit_tree() -> void:
 	ResourceSaver.save(save_data, SAVE_DATA_LOCATION)
+#endregion
 
 
+#region Refresh
+func refresh_if_visible():
+	if not visible:
+		return
+	refresh()
+
+func refresh():
+	if base_control == null:
+		return
+	
+	if tree == null:
+		return
+	
+	# store collapsed identity
+	for i in _tree_items:
+		if i != null:
+			save_data.RESOURCE_COLLAPSED_VALUE[i.get_text(0)] = i.collapsed
+	
+	_tree_items.clear()
+	tree.reset()
+
+	_populate()
+
+	if save_data != null:
+		collapse_check()
+
+	for i in _tree_items:
+		if i == null:
+			continue
+		if i.get_metadata(0) != "Folder":
+			continue
+		process_colors(i)
+#endregion
+
+
+#region Populate
+## Populates the tree with tree items for each Resource class and its instances
+func _populate():
+	var class_items = _create_items_by_class()
+
+	var resource_files = find_resources_recursive(
+		editor_file_system.get_filesystem()
+	)
+	for resource in resource_files:
+		if resource["base"] not in class_items:
+			continue
+			
+		if resource["base"] == "Resource_Saved_Data":
+			continue
+			
+		var item : TreeItem = tree.create_item(class_items[resource["base"]])
+		var name = resource["path"].split("/")[-1].split(".")[0].capitalize()
+		
+		var icon = class_items[resource["base"]].get_meta("ICON")
+		var folder_icon = get_icon("Folder")
+
+		if icon == folder_icon:
+			var base_icon = get_icon("ResourcePreloader")
+			icon = base_icon
+
+		item.set_icon(0, icon)
+		item.set_text(0, name)
+		item.set_metadata(0, resource["path"])
+		_tree_items[item] = resource
+
+
+## Creates new tree items for each Resource class in the format 
+## {class: tree_items[]}
+func _create_items_by_class() -> Dictionary:
+	var class_map = _get_class_map()
+
+	var queue = ["Resource"]
+	## Formats to {class: tree_items[]}
+	var class_items = {}
+	while len(queue):
+		var base = queue.pop_front()
+		if base not in class_map:
+			continue
+
+		for klass in class_map[base]:
+			var item = tree.add_base_resource(klass)
+			_tree_items[item] = klass
+			class_items[klass["class"]] = item
+			queue.append(klass["class"])
+
+	return class_items
+
+
+## Gets all global Resource classes by base in the format {base: sub_classes[]}
+func _get_class_map() -> Dictionary:
+	## Formats to {name: global_class_info}
+	var classes:= {}
+	for klass in ProjectSettings.get_global_class_list():
+		classes[klass["class"]] = klass
+	
+	## Formats to {base: sub_classes[]}
+	var class_map = {}
+	for name in classes:
+		var klass = classes[name]
+		var start = klass
+		
+		# makes sure the class inherits (at some point) from Resource before
+		# adding it to the class_map
+		while true:
+			if classes[klass["class"]]["base"] == "Resource":
+				if start["base"] not in class_map:
+					class_map[start["base"]] = []
+				class_map[start["base"]].append(start)
+				break
+			
+			if klass["base"] not in classes:
+				break
+			
+			klass = classes[klass["base"]]
+
+	return class_map
+
+
+var resource_regex = RegEx.new()
 func find_resources_recursive(dir: EditorFileSystemDirectory) -> Array:
 	var results: Array = []
 	for i: int in range(dir.get_file_count()):
@@ -380,98 +496,4 @@ func find_resources_recursive(dir: EditorFileSystemDirectory) -> Array:
 		results += find_resources_recursive(dir.get_subdir(i))
 	
 	return results
-
-
-#region Refresh
-func refresh_if_visible():
-	if not visible:
-		return
-	refresh()
-
-func refresh():
-	if base_control == null:
-		return
-	
-	if tree == null:
-		return
-	
-	## store collapsed identity
-	for i in _tree_items:
-		if i != null:
-			save_data.RESOURCE_COLLAPSED_VALUE[i.get_text(0)] = i.collapsed
-	
-	_tree_items.clear()
-	tree.reset()
-
-	## formats to {name: info}
-	var classes:= {}
-	for klass in ProjectSettings.get_global_class_list():
-		classes[klass["class"]] = klass
-	
-	var class_map = {}
-	for name in classes:
-		var klass = classes[name]
-		var start = klass
-		
-		while true:
-			## if the current class's base class is Resource, add it to the map
-			## and advance
-			if classes[klass["class"]]["base"] == "Resource":
-				if start["base"] not in class_map:
-					class_map[start["base"]] = []
-				class_map[start["base"]].append(start)
-				break
-			
-			if klass["base"] not in classes:
-				break
-			
-			klass = classes[klass["base"]]
-
-	var queue = ["Resource"]
-	var class_items = {}
-	while len(queue):
-		var base = queue.pop_front()
-		if base not in class_map:
-			continue
-
-		for klass in class_map[base]:
-			var item = tree.add_base_resource(klass)
-			_tree_items[item] = klass
-			class_items[klass["class"]] = item
-			queue.append(klass["class"])
-
-	var resource_files = find_resources_recursive(
-		editor_file_system.get_filesystem()
-	)
-	for resource in resource_files:
-		if resource["base"] not in class_items:
-			continue
-			
-		if resource["base"] == "Resource_Saved_Data":
-			continue
-			
-		var item : TreeItem = tree.create_item(class_items[resource["base"]])
-		var name = resource["path"].split("/")[-1].split(".")[0].capitalize()
-		
-		var icon = class_items[resource["base"]].get_meta("ICON")
-		var folder_icon = get_icon("Folder")
-
-		if icon == folder_icon:
-			var base_icon = get_icon("ResourcePreloader")
-			icon = base_icon
-
-		item.set_icon(0, icon)
-		item.set_text(0, name)
-		item.set_metadata(0, resource["path"])
-		_tree_items[item] = resource
-
-	if save_data != null:
-		collapse_check()
-
-	for i in _tree_items:
-		if i == null:
-			continue
-		if i.get_metadata(0) != "Folder":
-			continue
-		process_colors(i)
 #endregion
