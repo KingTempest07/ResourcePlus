@@ -11,7 +11,9 @@ var tree: ResourceTree
 
 
 func _ready() -> void:
-	right_icon = ResourceDock.get_icon("Search")
+	# prevent errors when opening the dock's scene in the editor
+	if ResourceDock.instance != null:
+		right_icon = ResourceDock.get_icon("Search")
 	text_changed.connect(_on_text_changed)
 
 

@@ -288,7 +288,9 @@ func _ready():
 	
 	collapse_check()
 
-	_set_icons()
+	# prevent errors when opening the dock's scene in the editor
+	if instance != null:
+		_set_icons()
 
 
 func _connect_signals():
