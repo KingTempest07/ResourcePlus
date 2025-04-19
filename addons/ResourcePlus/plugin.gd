@@ -1,3 +1,6 @@
+# Copyright (c) 2024 Make It With Wyatt. Licensed under the MIT License. 
+# (See LICENSE file for details.)
+
 @tool
 extends EditorPlugin
 
